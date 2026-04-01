@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .constants import ConveyorState, LifterState, TRANSFER_SLOT_CENTER_X, TRANSFER_SLOT_CENTER_Y
+from .constants import ConveyorState, LifterState
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class TransferCommand:
     src_x: float
     src_y: float
@@ -15,9 +15,15 @@ class TransferCommand:
     dst_y: float
 
 
+@dataclass(frozen=True, slots=True)
+class StackPosition:
+    x: float
+    y: float
+
+
 @dataclass(slots=True)
 class SymbolTable:
-    """ADS-like symbol values kept intentionally small and close to the spec."""
+    """ADS-like symbol values kept intentionally close to the exposed spec."""
 
     remote_send_pallet: bool = False
     remote_release_from_imaging: bool = False
@@ -35,9 +41,16 @@ class SymbolTable:
 class SimulatorState:
     conveyor_state: ConveyorState = ConveyorState.INITIALIZE
     lifter_state: LifterState = LifterState.READY
-    pallet_loaded: bool = False
     pallet_in_system: bool = True
-    pallet_center_x: float = TRANSFER_SLOT_CENTER_X
-    pallet_center_y: float = TRANSFER_SLOT_CENTER_Y
-    blocks_by_center: dict[tuple[float, float], int] = field(default_factory=dict)
+    pallet_relative_blocks: dict[StackPosition, int] = field(default_factory=dict)
+    storage_blocks: dict[StackPosition, int] = field(default_factory=dict)
     last_error: str | None = None
+    diagnostics: list[str] = field(default_factory=list)
+
+    @property
+    def pallet_stack_count(self) -> int:
+        return sum(self.pallet_relative_blocks.values())
+
+    @property
+    def storage_stack_count(self) -> int:
+        return len(self.storage_blocks)

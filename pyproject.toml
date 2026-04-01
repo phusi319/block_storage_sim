@@ -13,7 +13,7 @@ authors = [
   { name = "Matti Valikyla" }
 ]
 dependencies = [
-  "pyads>=3.4,<4.0",
+  "py-ads-client>=0.0.7,<0.1",
 ]
 
 [project.optional-dependencies]

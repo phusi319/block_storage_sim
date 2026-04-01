@@ -1,13 +1,41 @@
-import pyads
+"""Simple interactive ADS tester for the simulator or a real PLC."""
+
+from __future__ import annotations
+
+import sys
 from time import sleep
 
-# 1. Define Connection Parameters
-# Replace with your PLC's actual AMS NetID
-PLC_NET_ID = '5.46.196.64.1.1' 
-PLC_PORT = pyads.PORT_TC3PLC1  # Constant for 851
+try:
+    from py_ads_client import ADSClient, ADSSymbol, BOOL, INT, LREAL
+except ModuleNotFoundError as exc:
+    if exc.name != "py_ads_client":
+        raise
 
-def print_state(state):
+    print("Missing dependency: py_ads_client")
+    print("Run the tester with the project virtual environment:")
+    print(r"  .\.venv\Scripts\python.exe .\simple_interface_tester.py")
+    print("If needed, install dependencies first:")
+    print(r"  .\.venv\Scripts\python.exe -m pip install -e .[dev]")
+    sys.exit(1)
 
+
+PLC_IP = "127.0.0.1"
+PLC_NET_ID = "127.0.0.1.1.1"
+PLC_PORT = 851
+LOCAL_NET_ID = "127.0.0.1.1.2"
+
+CONVEYOR_STATE = ADSSymbol("StatusVars.ConveyorState", INT)
+REMOTE_SEND_PALLET = ADSSymbol("Remote.send_pallet", BOOL)
+REMOTE_RELEASE_FROM_IMAGING = ADSSymbol("Remote.release_from_imaging", BOOL)
+REMOTE_RETURN_PALLET = ADSSymbol("Remote.return_pallet", BOOL)
+REMOTE_TRANSFER_ITEM = ADSSymbol("Remote.transfer_item", BOOL)
+REMOTE_SRC_X = ADSSymbol("Remote.src_x", LREAL)
+REMOTE_SRC_Y = ADSSymbol("Remote.src_y", LREAL)
+REMOTE_DST_X = ADSSymbol("Remote.dst_x", LREAL)
+REMOTE_DST_Y = ADSSymbol("Remote.dst_y", LREAL)
+
+
+def print_state(state: int) -> None:
     match state:
         case 0:
             print("s000_initialize")
@@ -32,85 +60,66 @@ def print_state(state):
         case _:
             print("Unknown state")
 
-def main():
-    # 2. Establish Connection
-    # The 'with' statement ensures the connection is closed automatically
+
+def main() -> None:
+    client = ADSClient(local_ams_net_id=LOCAL_NET_ID)
     try:
-        with pyads.Connection(PLC_NET_ID, PLC_PORT) as plc:
-            print(f"Connecting to PLC at {PLC_NET_ID}...")
-            
-            # Check if the PLC is actually reachable
-            if plc.is_open:
+        client.open(target_ip=PLC_IP, target_ams_net_id=PLC_NET_ID, target_ams_port=PLC_PORT)
+        device_info = client.read_device_info()
+        print(f"Connected to: {device_info.device_name} ({device_info.major_version}.{device_info.minor_version}.{device_info.build_version})")
 
-                # 3. Read Device Info
-                device_name, version = plc.read_device_info()
-                print(f"Connected to: {device_name} (Version: {version})")
+        state_prev: int | None = None
 
-                state_prev = 0
+        while True:
+            print("Waiting...")
+            sleep(1)
+            while True:
+                state = client.read_symbol(CONVEYOR_STATE)
+                if state != state_prev:
+                    print_state(state)
+                    state_prev = state
 
-                while True:
+                if state in [101, 120, 140]:
+                    break
 
+                sleep(0.2)
 
-                    print("Waiting...")
-                    sleep(1)
-                    while True:
-                        state = plc.read_by_name("StatusVars.ConveyorState", pyads.PLCTYPE_INT)
-                        if state != state_prev:
-                            print_state(state)
-                        state_prev = state
+            print("1 - Send pallet")
+            print("2 - Release pallet from imaging")
+            print("3 - Return pallet")
+            print("4 - Transfer item")
+            print("9 - Quit")
 
-                        if state in [101, 120, 140]:
-                            break   
-                    
-                    print("1 - Send pallet")
-                    print("2 - Release pallet from imaging")
-                    print("3 - Return pallet")
-                    print("4 - Transfer item")
-                    print("9 - Quit")
+            sel = int(input("Select: "))
 
-                    sel = int(input("Select: "))
+            match sel:
+                case 1:
+                    client.write_symbol(REMOTE_SEND_PALLET, True)
+                case 2:
+                    client.write_symbol(REMOTE_RELEASE_FROM_IMAGING, True)
+                case 3:
+                    client.write_symbol(REMOTE_RETURN_PALLET, True)
+                case 4:
+                    src_x = float(input("Source x-coordinate: "))
+                    src_y = float(input("Source y-coordinate: "))
+                    dst_x = float(input("Destination x-coordinate: "))
+                    dst_y = float(input("Destination y-coordinate: "))
+                    client.write_symbol(REMOTE_SRC_X, src_x)
+                    client.write_symbol(REMOTE_SRC_Y, src_y)
+                    client.write_symbol(REMOTE_DST_X, dst_x)
+                    client.write_symbol(REMOTE_DST_Y, dst_y)
+                    sleep(0.1)
+                    client.write_symbol(REMOTE_TRANSFER_ITEM, True)
+                case 9:
+                    break
+                case _:
+                    print("Invalid selection")
 
-                    match sel:
-                        case 1:
-                            plc.write_by_name("Remote.send_pallet", True, pyads.PLCTYPE_BOOL)
+    except Exception as exc:
+        print(f"Error: {exc}")
+    finally:
+        client.close()
 
-                        case 2:
-                            plc.write_by_name("Remote.release_from_imaging", True, pyads.PLCTYPE_BOOL)
-
-                        case 3:
-                            plc.write_by_name("Remote.return_pallet", True, pyads.PLCTYPE_BOOL)
-
-                        case 4:
-                            src_x = float(input("Source x-coordinate: "))
-                            src_y = float(input("Source y-coordinate: "))
-                            dst_x = float(input("Destination x-coordinate: "))
-                            dst_y = float(input("Destination y-coordinate: "))
-                            plc.write_by_name("Remote.src_x", src_x, pyads.PLCTYPE_LREAL)
-                            plc.write_by_name("Remote.src_y", src_y, pyads.PLCTYPE_LREAL)
-                            plc.write_by_name("Remote.dst_x", dst_x, pyads.PLCTYPE_LREAL)
-                            plc.write_by_name("Remote.dst_y", dst_y, pyads.PLCTYPE_LREAL)
-                            sleep(1) # Making sure coordinates are written
-                            plc.write_by_name("Remote.transfer_item", True, pyads.PLCTYPE_BOOL)
-
-                        case 9:
-                            break
-
-                        case _:
-                            print("Invalid selection")
-
-
-        
-                    
-
-    except pyads.ADSError as e:
-        print(f"ADS Error: {e}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
-
-
-
-
-

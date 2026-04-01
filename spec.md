@@ -25,9 +25,11 @@ Using ADS for both:
 
 is acceptable and preferred for simplicity, because it keeps the simulator close to the real device interface.
 
-Python applications are expected to communicate with the simulator using the `pyads` library.
+Python applications are expected to communicate with the simulator using ADS from Python.
 
-The file `simple_interface_tester.py` in this repository is a known-working reference client for the real device and should be able to work with the simulator with only small ADS connection-parameter changes.
+The file `simple_interface_tester.py` in this repository is a known-working reference client for the simulator-side ADS interface and should remain close to the interaction pattern used later against the real device.
+
+Simulation mode should not require TwinCAT or the Beckhoff ADS runtime on the same machine.
 
 ### 2.2 Design Intent
 
@@ -56,6 +58,8 @@ At any given time, there is only one pallet in the system.
 
 The simulator may maintain internal block positions for its own logic and GUI, but it must not expose block locations through ADS. The student application is responsible for tracking block locations.
 
+The GUI is not the student control application. It is a local observer tool for the backend simulator state.
+
 ## 4. Conveyor Module
 
 ### 4.1 Conveyor Topology
@@ -82,6 +86,8 @@ This is the station where:
 - blocks exit the system.
 
 At the home slot, blocks may be placed on the pallet or removed from the pallet.
+
+For the simulator GUI tool, manual add/remove at the home slot operates on the pallet center position.
 
 #### Imaging Slot
 
@@ -120,6 +126,10 @@ The simulator should interpret these coordinates in the same global coordinate s
 
 The coordinates represent item center points.
 
+For placements, the destination coordinates must identify the intended block center position.
+
+For picks, the source coordinates may be anywhere inside the footprint of the source block. If the source point is not exactly at the block center but still lies within the block footprint, the pick is accepted and recorded as a warning.
+
 ## 6. Physical Area Model
 
 ### 6.1 Global Bounds
@@ -127,6 +137,11 @@ The coordinates represent item center points.
 The whole modeled area is:
 
 - from `(0, 0)` to `(400, 430)` millimeters
+
+The coordinate system is defined with the origin at the top-right corner of the modeled area.
+
+- `x` increases when moving left
+- `y` increases when moving down
 
 ### 6.2 Conveyor-Reserved Area
 
@@ -162,6 +177,8 @@ The simulator should model the following object sizes:
 There is only one pallet in the system at a time.
 
 When the pallet is present in the transfer slot, placements onto the pallet are valid even though that pallet lies inside the conveyor-reserved area.
+
+When a block is manually loaded onto the pallet through the GUI tool, the block center is placed at the pallet center.
 
 ### 7.3 Stack Height Rules
 
@@ -280,7 +297,7 @@ The conveyor follows this high-level state sequence:
 
 The current command-to-state relationships are:
 
-- Initialization enters the startup path automatically.
+- Initialization enters the startup path automatically without a separate client command.
 - `Remote.send_pallet` advances the pallet from home toward imaging.
 - `Remote.release_from_imaging` advances the pallet from imaging toward the transfer slot.
 - `Remote.return_pallet` advances the pallet from the transfer slot back toward home.
@@ -303,12 +320,14 @@ At minimum, a transfer should be considered invalid if:
 
 The simulator may allow transfers to be commanded at any time, but the result of the transfer must still be validated against geometry and placement constraints.
 
+If the source point lies inside the source block but not exactly at its center, the transfer should still be accepted, but the simulator should record a warning.
+
 ## 12. Simulator Requirements
 
 The simulator should:
 
 - expose the ADS variable interface described in this specification,
-- allow Python student applications to connect through `pyads`,
+- allow Python student applications to connect through an ADS-capable Python client,
 - keep the ADS interface minimal and close to the real device,
 - avoid exposing block locations through ADS,
 - enforce conveyor command acceptance rules based on conveyor state,
@@ -320,6 +339,34 @@ The simulator should:
 
 The simulator should also be usable with the included `simple_interface_tester.py` after only small changes to ADS connection parameters such as AMS Net ID and port.
 
+### 12.1 GUI Role
+
+The GUI is a backend visualization and reset tool.
+
+The GUI should:
+
+- show the current pallet position,
+- visualize stored blocks and stack heights,
+- show the center coordinates of visible blocks,
+- show the pallet center coordinates,
+- show the current backend status values,
+- show accumulated warnings and alarms,
+- provide a reset action for starting over,
+- allow adding a block to the pallet only when the pallet is at the home slot,
+- allow removing a block from the pallet only when the pallet is at the home slot.
+
+The GUI should not:
+
+- send conveyor commands,
+- send lifter transfer commands,
+- act as an alternative student client.
+
+The home slot and imaging slot visualizations should be shown outside the modeled transfer area view. The transfer slot should be shown inside the transfer area view at `(160, 410)`.
+
+The transfer area visualization should preserve the modeled area proportions. The GUI should not compress the transfer area width in a way that distorts the geometry.
+
+Students are expected to create the client application that drives the conveyor and lifter through ADS. The included `simple_interface_tester.py` is only a basic reference client for smoke testing.
+
 ## 13. Recommended Non-Functional Behavior
 
 To support teaching and testing, the simulator should eventually support:
@@ -327,8 +374,9 @@ To support teaching and testing, the simulator should eventually support:
 - resetting the simulator to a known initial state,
 - configurable timing for state transitions,
 - logging of received commands, rejected commands, transfers, and state changes,
+- accumulation of warnings and alarms for later inspection,
 - simple local startup for students on their own machines,
-- a very simple GUI for testing,
+- a very simple GUI for backend observation,
 - a GUI that is easy to understand, easy to use, and easy to start,
 - optional visualization of pallet position, block positions, and stack heights.
 
@@ -338,7 +386,7 @@ These items are recommended design goals for the simulator project.
 
 The file `simple_interface_tester.py` shows the expected client interaction pattern:
 
-- connect to ADS with `pyads.Connection(...)`,
+- connect to ADS with a Python ADS client,
 - read `StatusVars.ConveyorState` repeatedly,
 - wait until the conveyor reaches one of the command-accepting states `101`, `120`, or `140`,
 - write command booleans to `Remote.*`,
