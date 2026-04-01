@@ -1,0 +1,41 @@
+"""Domain constants and enum-like values for the simulator."""
+
+from __future__ import annotations
+
+from enum import IntEnum
+
+
+class ConveyorState(IntEnum):
+    INITIALIZE = 0
+    NOT_HOMED = 1
+    HOMING = 10
+    BRAKING = 100
+    WAITING_AT_HOME = 101
+    MOVING_TO_IMAGING = 110
+    IMAGING = 120
+    MOVING_TO_SLOT = 130
+    WAITING_IN_SLOT = 140
+    MOVING_TO_HOME = 150
+
+
+class LifterState(IntEnum):
+    READY = 0
+    BUSY = 1
+
+
+AREA_MIN_X = 0.0
+AREA_MIN_Y = 0.0
+AREA_MAX_X = 400.0
+AREA_MAX_Y = 430.0
+
+CONVEYOR_RESERVED_MIN_X = 0.0
+CONVEYOR_RESERVED_MIN_Y = 300.0
+CONVEYOR_RESERVED_MAX_X = 400.0
+CONVEYOR_RESERVED_MAX_Y = 430.0
+
+TRANSFER_SLOT_CENTER_X = 160.0
+TRANSFER_SLOT_CENTER_Y = 410.0
+
+BLOCK_SIZE_MM = 60.0
+PALLET_SIZE_MM = 120.0
+MAX_STACK_HEIGHT = 2
