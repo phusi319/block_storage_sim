@@ -22,11 +22,12 @@ from .simulator import BlockStorageSimulator
 class SimulatorApp:
     """Observer-oriented GUI for backend state and storage visualization."""
 
-    HOME_SLOT_CENTER = StackPosition(90.0, 150.0)
-    IMAGING_SLOT_CENTER = StackPosition(90.0, 260.0)
+    HOME_SLOT_CENTER = StackPosition(420.0, 520.0)
+    IMAGING_SLOT_CENTER = StackPosition(90.0, TRANSFER_SLOT_CENTER_Y)
     REFRESH_MS = 250
     CANVAS_PADDING = 16
     AREA_LEFT = 220.0
+    SLOT_BOX_SIZE = PALLET_SIZE_MM + 20.0
 
     def __init__(self, simulator: BlockStorageSimulator) -> None:
         self.simulator = simulator
@@ -148,41 +149,63 @@ class SimulatorApp:
         self.canvas.create_text(left + 8, top + 8, anchor="nw", text="Storage area (x grows left)", fill="#544b3d")
         self.canvas.create_text(left + 8, reserved_top + 8, anchor="nw", text="Transfer area (x grows left)", fill="#544b3d")
 
-        self._draw_station("Home", self.HOME_SLOT_CENTER, in_area=False)
-        self._draw_station("Imaging", self.IMAGING_SLOT_CENTER, in_area=False)
-        self._draw_station("Transfer", StackPosition(TRANSFER_SLOT_CENTER_X, TRANSFER_SLOT_CENTER_Y), in_area=True)
+        self._draw_station("Home", self.HOME_SLOT_CENTER, in_area=False, show_coords=False)
+        self._draw_station("Imaging", self.IMAGING_SLOT_CENTER, in_area=False, show_coords=False)
+        self._draw_station("Transfer", StackPosition(TRANSFER_SLOT_CENTER_X, TRANSFER_SLOT_CENTER_Y), in_area=True, show_coords=True)
 
-        for position, height in self.simulator.state.storage_blocks.items():
-            self._draw_block_stack(position, height, pallet_relative=False, in_area=True)
+        for position, block_ids in self.simulator.state.storage_blocks.items():
+            self._draw_block_stack(position, block_ids, pallet_relative=False, in_area=True, show_coords=True)
 
         pallet_center = self._current_pallet_center()
         if pallet_center is not None:
             pallet_in_area = pallet_center == StackPosition(TRANSFER_SLOT_CENTER_X, TRANSFER_SLOT_CENTER_Y)
-            self._draw_pallet(pallet_center, in_area=pallet_in_area)
-            for relative_position, height in self.simulator.state.pallet_relative_blocks.items():
+            self._draw_pallet(pallet_center, in_area=pallet_in_area, show_coords=pallet_in_area)
+            for relative_position, block_ids in self.simulator.state.pallet_relative_blocks.items():
                 absolute_position = StackPosition(
                     pallet_center.x + relative_position.x,
                     pallet_center.y + relative_position.y,
                 )
-                self._draw_block_stack(absolute_position, height, pallet_relative=True, in_area=pallet_in_area)
+                self._draw_block_stack(absolute_position, block_ids, pallet_relative=True, in_area=pallet_in_area, show_coords=pallet_in_area)
 
-    def _draw_station(self, label: str, position: StackPosition, in_area: bool) -> None:
+    def _draw_station(self, label: str, position: StackPosition, in_area: bool, show_coords: bool) -> None:
         x = self._canvas_x(position.x, in_area=in_area)
         y = self.CANVAS_PADDING + position.y
+        if label == "Transfer":
+            slot_half = self.SLOT_BOX_SIZE / 2.0
+            self.canvas.create_rectangle(
+                x - slot_half,
+                y - slot_half,
+                x + slot_half,
+                y + slot_half,
+                outline="#8b7c69",
+                width=2,
+                dash=(4, 2),
+            )
         self.canvas.create_oval(x - 10, y - 10, x + 10, y + 10, fill="#7f705e", outline="")
         self.canvas.create_text(x, y - 18, text=label, fill="#544b3d")
-        self.canvas.create_text(x, y + 18, text=self._format_coords(position), fill="#544b3d")
+        if show_coords:
+            self.canvas.create_text(x, y + 18, text=self._format_coords(position), fill="#544b3d")
 
-    def _draw_pallet(self, center: StackPosition, in_area: bool) -> None:
+    def _draw_pallet(self, center: StackPosition, in_area: bool, show_coords: bool) -> None:
         half = PALLET_SIZE_MM / 2.0
         x0 = self._canvas_x(center.x, in_area=in_area) - half
         y0 = self.CANVAS_PADDING + center.y - half
         x1 = self._canvas_x(center.x, in_area=in_area) + half
         y1 = self.CANVAS_PADDING + center.y + half
         self.canvas.create_rectangle(x0, y0, x1, y1, fill="#cbb48a", outline="#7b6540", width=2)
-        self.canvas.create_text(self._canvas_x(center.x, in_area=in_area), y0 - 12, text=f"Pallet {self._format_coords(center)}", fill="#7b6540")
+        if show_coords:
+            self.canvas.create_text(self._canvas_x(center.x, in_area=in_area), y0 - 12, text=f"Pallet {self._format_coords(center)}", fill="#7b6540")
+        else:
+            self.canvas.create_text(self._canvas_x(center.x, in_area=in_area), y0 - 12, text="Pallet", fill="#7b6540")
 
-    def _draw_block_stack(self, center: StackPosition, height: int, pallet_relative: bool, in_area: bool) -> None:
+    def _draw_block_stack(
+        self,
+        center: StackPosition,
+        block_ids: list[int],
+        pallet_relative: bool,
+        in_area: bool,
+        show_coords: bool,
+    ) -> None:
         half = BLOCK_SIZE_MM / 2.0
         x0 = self._canvas_x(center.x, in_area=in_area) - half
         y0 = self.CANVAS_PADDING + center.y - half
@@ -191,9 +214,15 @@ class SimulatorApp:
         fill = "#6f90c8" if pallet_relative else "#799f73"
         outline = "#2e3b55" if pallet_relative else "#355333"
         self.canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline=outline, width=2)
-        if height > 1:
-            self.canvas.create_text((x0 + x1) / 2.0, (y0 + y1) / 2.0, text=str(height), fill="white")
-        self.canvas.create_text((x0 + x1) / 2.0, y1 + 12, text=self._format_coords(center), fill=outline)
+        top_block_id = block_ids[-1]
+        label = f"#{top_block_id}"
+        if len(block_ids) > 1:
+            label = f"#{top_block_id} ({len(block_ids)})"
+        center_x = (x0 + x1) / 2.0
+        center_y = (y0 + y1) / 2.0
+        self.canvas.create_text(center_x, center_y - 10, text=label, fill="white")
+        if show_coords:
+            self.canvas.create_text(center_x, center_y + 10, text=self._format_coords(center), fill="white")
 
     def _current_pallet_center(self) -> StackPosition | None:
         state = self.simulator.state.conveyor_state

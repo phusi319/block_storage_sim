@@ -60,6 +60,8 @@ The simulator may maintain internal block positions for its own logic and GUI, b
 
 The GUI is not the student control application. It is a local observer tool for the backend simulator state.
 
+For visualization, each simulated block may have a unique internal identifier. These identifiers are for GUI observation only and are not part of the ADS interface.
+
 ## 4. Conveyor Module
 
 ### 4.1 Conveyor Topology
@@ -348,6 +350,7 @@ The GUI should:
 - show the current pallet position,
 - visualize stored blocks and stack heights,
 - show the center coordinates of visible blocks,
+- show a unique identifier for each visible block,
 - show the pallet center coordinates,
 - show the current backend status values,
 - show accumulated warnings and alarms,
@@ -362,6 +365,7 @@ The GUI should not:
 - act as an alternative student client.
 
 The home slot and imaging slot visualizations should be shown outside the modeled transfer area view. The transfer slot should be shown inside the transfer area view at `(160, 410)`.
+Coordinates should be shown for objects inside the transfer area view, but not for objects outside the transfer area view.
 
 The transfer area visualization should preserve the modeled area proportions. The GUI should not compress the transfer area width in a way that distorts the geometry.
 

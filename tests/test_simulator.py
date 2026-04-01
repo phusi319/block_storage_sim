@@ -89,7 +89,7 @@ def test_send_pallet_requires_home_state() -> None:
 def test_manual_pallet_editing_requires_home_state() -> None:
     simulator = BlockStorageSimulator()
     assert simulator.add_block_to_home_pallet() is True
-    assert simulator.state.pallet_relative_blocks == {StackPosition(0.0, 0.0): 1}
+    assert simulator.state.pallet_relative_blocks == {StackPosition(0.0, 0.0): [1]}
     simulator.state.conveyor_state = ConveyorState.IMAGING
     assert simulator.add_block_to_home_pallet() is False
     simulator.state.conveyor_state = ConveyorState.WAITING_AT_HOME
@@ -124,7 +124,17 @@ def test_offset_pick_inside_block_is_allowed_with_warning() -> None:
     )
     assert result is True
     assert simulator.state.diagnostics[-1] == "WARNING: source pick point is offset from the block center"
-    assert simulator.state.storage_blocks == {StackPosition(200.0, 100.0): 1}
+    assert simulator.state.storage_blocks == {StackPosition(200.0, 100.0): [1]}
+
+
+def test_block_id_is_preserved_when_block_moves() -> None:
+    simulator = BlockStorageSimulator()
+    assert simulator.add_storage_block(100.0, 100.0) is True
+    original_id = simulator.state.storage_blocks[StackPosition(100.0, 100.0)][0]
+    assert simulator.transfer_item(
+        TransferCommand(src_x=100.0, src_y=100.0, dst_x=200.0, dst_y=100.0)
+    )
+    assert simulator.state.storage_blocks[StackPosition(200.0, 100.0)] == [original_id]
 
 
 def test_transfer_to_reserved_area_only_allowed_on_pallet() -> None:

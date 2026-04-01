@@ -74,7 +74,7 @@ class BlockStorageSimulator:
     def remove_block_from_home_pallet(self) -> bool:
         if not self.can_modify_pallet_at_home():
             return self._fail("pallet can only be loaded or unloaded at home")
-        if self.state.pallet_relative_blocks.get(self.MANUAL_PALLET_POSITION, 0) > 0:
+        if len(self.state.pallet_relative_blocks.get(self.MANUAL_PALLET_POSITION, [])) > 0:
             self._remove_block_from_stack(self.state.pallet_relative_blocks, self.MANUAL_PALLET_POSITION)
             self.state.last_error = None
             self._sync_status_symbols()
@@ -155,14 +155,16 @@ class BlockStorageSimulator:
         ):
             return self._fail("destination would overlap an existing pallet stack")
 
-        if destination_stack.get(destination_key, 0) >= MAX_STACK_HEIGHT:
+        if len(destination_stack.get(destination_key, [])) >= MAX_STACK_HEIGHT:
             return self._fail("destination stack would exceed maximum height")
 
         self.state.lifter_state = LifterState.BUSY
         self._sync_status_symbols()
 
-        self._remove_block_from_stack(source_stack, source_key)
-        destination_stack[destination_key] = destination_stack.get(destination_key, 0) + 1
+        moved_block_id = self._remove_block_from_stack(source_stack, source_key)
+        if destination_key not in destination_stack:
+            destination_stack[destination_key] = []
+        destination_stack[destination_key].append(moved_block_id)
 
         self.state.lifter_state = LifterState.READY
         self.state.last_error = None
@@ -203,10 +205,10 @@ class BlockStorageSimulator:
         data["conveyor_state"] = self.state.conveyor_state.name
         data["lifter_state"] = self.state.lifter_state.name
         data["pallet_relative_blocks"] = {
-            f"({key.x}, {key.y})": value for key, value in self.state.pallet_relative_blocks.items()
+            f"({key.x}, {key.y})": value[:] for key, value in self.state.pallet_relative_blocks.items()
         }
         data["storage_blocks"] = {
-            f"({key.x}, {key.y})": value for key, value in self.state.storage_blocks.items()
+            f"({key.x}, {key.y})": value[:] for key, value in self.state.storage_blocks.items()
         }
         return data
 
@@ -214,24 +216,26 @@ class BlockStorageSimulator:
         self.symbols.conveyor_state = self.state.conveyor_state
         self.symbols.lifter_state = self.state.lifter_state
 
-    def _add_block_to_stack(self, stack: dict[StackPosition, int], position: StackPosition) -> bool:
-        if stack.get(position, 0) >= MAX_STACK_HEIGHT:
+    def _add_block_to_stack(self, stack: dict[StackPosition, list[int]], position: StackPosition) -> bool:
+        if len(stack.get(position, [])) >= MAX_STACK_HEIGHT:
             return self._fail("destination stack would exceed maximum height")
-        stack[position] = stack.get(position, 0) + 1
+        if position not in stack:
+            stack[position] = []
+        stack[position].append(self.state.next_block_id)
+        self.state.next_block_id += 1
         self.state.last_error = None
         self._sync_status_symbols()
         return True
 
-    def _remove_block_from_stack(self, stack: dict[StackPosition, int], position: StackPosition) -> None:
-        height = stack[position]
-        if height <= 1:
+    def _remove_block_from_stack(self, stack: dict[StackPosition, list[int]], position: StackPosition) -> int:
+        removed_block_id = stack[position].pop()
+        if not stack[position]:
             del stack[position]
-        else:
-            stack[position] = height - 1
+        return removed_block_id
 
     def _locate_source(
         self, position: StackPosition
-    ) -> tuple[dict[StackPosition, int], StackPosition, bool] | None:
+    ) -> tuple[dict[StackPosition, list[int]], StackPosition, bool] | None:
         if self._point_on_active_pallet(position):
             relative = self._to_pallet_relative(position)
             found = self._find_stack_hit(relative, self.state.pallet_relative_blocks)
@@ -246,7 +250,7 @@ class BlockStorageSimulator:
 
     def _locate_destination(
         self, position: StackPosition
-    ) -> tuple[dict[StackPosition, int], StackPosition] | None:
+    ) -> tuple[dict[StackPosition, list[int]], StackPosition] | None:
         if self._point_on_active_pallet(position):
             relative = self._to_pallet_relative(position)
             if not self._relative_point_on_pallet(relative):
@@ -269,7 +273,7 @@ class BlockStorageSimulator:
     def _can_place_without_overlap(
         self,
         position: StackPosition,
-        stack_map: dict[StackPosition, int],
+        stack_map: dict[StackPosition, list[int]],
         ignore: StackPosition | None = None,
     ) -> bool:
         for existing in stack_map:
@@ -288,7 +292,7 @@ class BlockStorageSimulator:
     def _find_stack_hit(
         self,
         position: StackPosition,
-        stack_map: dict[StackPosition, int],
+        stack_map: dict[StackPosition, list[int]],
     ) -> tuple[StackPosition, bool] | None:
         for existing in stack_map:
             if self._point_within_block(position, existing):

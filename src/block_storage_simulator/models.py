@@ -42,14 +42,15 @@ class SimulatorState:
     conveyor_state: ConveyorState = ConveyorState.INITIALIZE
     lifter_state: LifterState = LifterState.READY
     pallet_in_system: bool = True
-    pallet_relative_blocks: dict[StackPosition, int] = field(default_factory=dict)
-    storage_blocks: dict[StackPosition, int] = field(default_factory=dict)
+    next_block_id: int = 1
+    pallet_relative_blocks: dict[StackPosition, list[int]] = field(default_factory=dict)
+    storage_blocks: dict[StackPosition, list[int]] = field(default_factory=dict)
     last_error: str | None = None
     diagnostics: list[str] = field(default_factory=list)
 
     @property
     def pallet_stack_count(self) -> int:
-        return sum(self.pallet_relative_blocks.values())
+        return sum(len(block_ids) for block_ids in self.pallet_relative_blocks.values())
 
     @property
     def storage_stack_count(self) -> int:
