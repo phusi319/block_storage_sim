@@ -28,6 +28,7 @@ class SimulatorApp:
     CANVAS_PADDING = 16
     AREA_LEFT = 220.0
     SLOT_BOX_SIZE = PALLET_SIZE_MM + 20.0
+    VIEW_SCALE = 0.72
 
     def __init__(self, simulator: BlockStorageSimulator) -> None:
         self.simulator = simulator
@@ -60,10 +61,10 @@ class SimulatorApp:
         container = ttk.Frame(self.outer_canvas, padding=16)
         self._outer_canvas_window = self.outer_canvas.create_window((0, 0), window=container, anchor="nw")
 
-        container.columnconfigure(0, weight=3)
-        container.columnconfigure(1, weight=2)
-        container.columnconfigure(2, weight=2)
+        container.columnconfigure(0, weight=2)
+        container.columnconfigure(1, weight=4)
         container.rowconfigure(1, weight=1)
+        container.rowconfigure(2, weight=1)
 
         container.bind("<Configure>", self._on_container_configure)
         self.outer_canvas.bind("<Configure>", self._on_outer_canvas_configure)
@@ -71,17 +72,17 @@ class SimulatorApp:
         ttk.Label(container, text="Block Storage Simulator", font=("Segoe UI", 16, "bold")).grid(
             row=0,
             column=0,
-            columnspan=3,
+            columnspan=2,
             sticky="w",
             pady=(0, 12),
         )
 
         status_frame = ttk.LabelFrame(container, text="Status", padding=12)
-        status_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(0, 12))
+        status_frame.grid(row=1, column=0, sticky="new", padx=(0, 8), pady=(0, 12))
         ttk.Label(status_frame, textvariable=self.status_text, justify=tk.LEFT).pack(anchor=tk.W)
 
         notes_frame = ttk.LabelFrame(container, text="Notes", padding=12)
-        notes_frame.grid(row=1, column=1, sticky="nsew", padx=8, pady=(0, 12))
+        notes_frame.grid(row=2, column=0, sticky="new", padx=(0, 8), pady=(0, 12))
         notes = (
             "- The GUI does not drive conveyor or lifter commands.\n"
             "- Reset returns the simulator to a fresh state.\n"
@@ -90,7 +91,7 @@ class SimulatorApp:
         ttk.Label(notes_frame, text=notes, justify=tk.LEFT, wraplength=280).pack(anchor=tk.W)
 
         diagnostics_frame = ttk.LabelFrame(container, text="Warnings And Alarms", padding=12)
-        diagnostics_frame.grid(row=1, column=2, sticky="nsew", padx=(8, 0), pady=(0, 12))
+        diagnostics_frame.grid(row=3, column=0, sticky="nsew", padx=(0, 8), pady=(0, 12))
         self.diagnostics_list = tk.Listbox(diagnostics_frame, height=10, width=44)
         diagnostics_scroll = ttk.Scrollbar(diagnostics_frame, orient=tk.VERTICAL, command=self.diagnostics_list.yview)
         self.diagnostics_list.configure(yscrollcommand=diagnostics_scroll.set)
@@ -98,19 +99,14 @@ class SimulatorApp:
         diagnostics_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         diagram_frame = ttk.LabelFrame(container, text="Storage View", padding=12)
-        diagram_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=(0, 8))
+        diagram_frame.grid(row=1, column=1, rowspan=3, sticky="nsew")
         diagram_frame.columnconfigure(0, weight=1)
         diagram_frame.rowconfigure(0, weight=1)
-        self.canvas = tk.Canvas(diagram_frame, width=640, height=500, bg="#fbfaf6", highlightthickness=0)
-        canvas_y_scroll = ttk.Scrollbar(diagram_frame, orient=tk.VERTICAL, command=self.canvas.yview)
-        canvas_x_scroll = ttk.Scrollbar(diagram_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
-        self.canvas.configure(yscrollcommand=canvas_y_scroll.set, xscrollcommand=canvas_x_scroll.set)
+        self.canvas = tk.Canvas(diagram_frame, width=540, height=500, bg="#fbfaf6", highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky="nsew")
-        canvas_y_scroll.grid(row=0, column=1, sticky="ns")
-        canvas_x_scroll.grid(row=1, column=0, sticky="ew")
 
         controls_frame = ttk.LabelFrame(container, text="Manual Tools", padding=12)
-        controls_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        controls_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         self.add_button = ttk.Button(controls_frame, text="Add Block To Home Pallet", command=self._add_home_pallet_block)
         self.add_button.pack(side=tk.LEFT, padx=(0, 8))
         self.remove_button = ttk.Button(
@@ -169,18 +165,18 @@ class SimulatorApp:
         self.canvas.delete("all")
 
         pad = self.CANVAS_PADDING
-        left = pad + self.AREA_LEFT
-        top = pad
-        right = left + AREA_MAX_X
-        bottom = pad + AREA_MAX_Y
-        reserved_top = pad + CONVEYOR_RESERVED_MIN_Y
+        left = self._scale_x(pad + self.AREA_LEFT)
+        top = self._scale_y(pad)
+        right = self._scale_x(pad + self.AREA_LEFT + AREA_MAX_X)
+        bottom = self._scale_y(pad + AREA_MAX_Y)
+        reserved_top = self._scale_y(pad + CONVEYOR_RESERVED_MIN_Y)
 
         self.canvas.create_rectangle(left, top, right, bottom, fill="#f7f4ee", outline="#9d907d", width=2)
         self.canvas.create_rectangle(left, top, right, reserved_top, fill="#fdfcf8", outline="")
         self.canvas.create_rectangle(left, reserved_top, right, bottom, fill="#ece3d3", outline="")
 
-        self.canvas.create_text(left + 8, top + 8, anchor="nw", text="Storage area (x grows left)", fill="#544b3d")
-        self.canvas.create_text(left + 8, reserved_top + 8, anchor="nw", text="Transfer area (x grows left)", fill="#544b3d")
+        self.canvas.create_text(left + 8, top + 8, anchor="nw", text="Storage area (x grows left)", fill="#544b3d", font=("Segoe UI", 9))
+        self.canvas.create_text(left + 8, reserved_top + 8, anchor="nw", text="Transfer area (x grows left)", fill="#544b3d", font=("Segoe UI", 9))
 
         self._draw_station("Home", self.HOME_SLOT_CENTER, in_area=False, show_coords=False)
         self._draw_station("Imaging", self.IMAGING_SLOT_CENTER, in_area=False, show_coords=False)
@@ -199,17 +195,10 @@ class SimulatorApp:
                     pallet_center.y + relative_position.y,
                 )
                 self._draw_block_stack(absolute_position, block_ids, pallet_relative=True, in_area=pallet_in_area, show_coords=pallet_in_area)
-        bbox = self.canvas.bbox("all")
-        if bbox is not None:
-            margin = 24
-            self.canvas.configure(
-                scrollregion=(bbox[0] - margin, bbox[1] - margin, bbox[2] + margin, bbox[3] + margin)
-            )
-
     def _draw_station(self, label: str, position: StackPosition, in_area: bool, show_coords: bool) -> None:
         x = self._canvas_x(position.x, in_area=in_area)
-        y = self.CANVAS_PADDING + position.y
-        slot_half = self.SLOT_BOX_SIZE / 2.0
+        y = self._scale_y(self.CANVAS_PADDING + position.y)
+        slot_half = self._scale_size(self.SLOT_BOX_SIZE / 2.0)
         self.canvas.create_rectangle(
             x - slot_half,
             y - slot_half,
@@ -219,21 +208,23 @@ class SimulatorApp:
             width=2,
             dash=(4, 2),
         )
-        self.canvas.create_text(x, y - slot_half - 14, text=label, fill="#544b3d")
+        self.canvas.create_text(x, y - slot_half - 14, text=label, fill="#544b3d", font=("Segoe UI", 9))
         if show_coords:
-            self.canvas.create_text(x, y + slot_half + 14, text=self._format_coords(position), fill="#544b3d")
+            self.canvas.create_text(x, y + slot_half + 14, text=self._format_coords(position), fill="#544b3d", font=("Segoe UI", 8))
 
     def _draw_pallet(self, center: StackPosition, in_area: bool, show_coords: bool) -> None:
-        half = PALLET_SIZE_MM / 2.0
-        x0 = self._canvas_x(center.x, in_area=in_area) - half
-        y0 = self.CANVAS_PADDING + center.y - half
-        x1 = self._canvas_x(center.x, in_area=in_area) + half
-        y1 = self.CANVAS_PADDING + center.y + half
+        half = self._scale_size(PALLET_SIZE_MM / 2.0)
+        center_x = self._canvas_x(center.x, in_area=in_area)
+        center_y = self._scale_y(self.CANVAS_PADDING + center.y)
+        x0 = center_x - half
+        y0 = center_y - half
+        x1 = center_x + half
+        y1 = center_y + half
         self.canvas.create_rectangle(x0, y0, x1, y1, fill="#6fd96f", outline="#2e7d32", width=2)
         if show_coords:
-            self.canvas.create_text(self._canvas_x(center.x, in_area=in_area), y0 - 12, text=f"Pallet {self._format_coords(center)}", fill="#2e7d32")
+            self.canvas.create_text(center_x, y0 - 12, text=f"Pallet {self._format_coords(center)}", fill="#2e7d32", font=("Segoe UI", 8))
         else:
-            self.canvas.create_text(self._canvas_x(center.x, in_area=in_area), y0 - 12, text="Pallet", fill="#2e7d32")
+            self.canvas.create_text(center_x, y0 - 12, text="Pallet", fill="#2e7d32", font=("Segoe UI", 9))
 
     def _draw_block_stack(
         self,
@@ -243,11 +234,13 @@ class SimulatorApp:
         in_area: bool,
         show_coords: bool,
     ) -> None:
-        half = BLOCK_SIZE_MM / 2.0
-        x0 = self._canvas_x(center.x, in_area=in_area) - half
-        y0 = self.CANVAS_PADDING + center.y - half
-        x1 = self._canvas_x(center.x, in_area=in_area) + half
-        y1 = self.CANVAS_PADDING + center.y + half
+        half = self._scale_size(BLOCK_SIZE_MM / 2.0)
+        center_x = self._canvas_x(center.x, in_area=in_area)
+        center_y = self._scale_y(self.CANVAS_PADDING + center.y)
+        x0 = center_x - half
+        y0 = center_y - half
+        x1 = center_x + half
+        y1 = center_y + half
         fill = "#6f90c8" if pallet_relative else "#799f73"
         outline = "#2e3b55" if pallet_relative else "#355333"
         self.canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline=outline, width=2)
@@ -255,11 +248,9 @@ class SimulatorApp:
         label = f"#{top_block_id}"
         if len(block_ids) > 1:
             label = f"#{top_block_id} ({len(block_ids)})"
-        center_x = (x0 + x1) / 2.0
-        center_y = (y0 + y1) / 2.0
-        self.canvas.create_text(center_x, center_y - 10, text=label, fill="white")
+        self.canvas.create_text(center_x, center_y - 8, text=label, fill="white", font=("Segoe UI", 8, "bold"))
         if show_coords:
-            self.canvas.create_text(center_x, center_y + 10, text=self._format_coords(center), fill="white")
+            self.canvas.create_text(center_x, center_y + 8, text=self._format_coords(center), fill="white", font=("Segoe UI", 7))
 
     def _current_pallet_center(self) -> StackPosition | None:
         state = self.simulator.state.conveyor_state
@@ -278,8 +269,17 @@ class SimulatorApp:
 
     def _canvas_x(self, x: float, in_area: bool) -> float:
         if in_area:
-            return self.CANVAS_PADDING + self.AREA_LEFT + (AREA_MAX_X - x)
-        return self.CANVAS_PADDING + x
+            return self._scale_x(self.CANVAS_PADDING + self.AREA_LEFT + (AREA_MAX_X - x))
+        return self._scale_x(self.CANVAS_PADDING + x)
+
+    def _scale_x(self, value: float) -> float:
+        return value * self.VIEW_SCALE
+
+    def _scale_y(self, value: float) -> float:
+        return value * self.VIEW_SCALE
+
+    def _scale_size(self, value: float) -> float:
+        return value * self.VIEW_SCALE
 
     def _format_coords(self, position: StackPosition) -> str:
         return f"({position.x:.0f}, {position.y:.0f})"
