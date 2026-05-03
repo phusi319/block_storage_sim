@@ -60,6 +60,35 @@ The original 5-item menu (1 Send pallet / 2 Release / 3 Return /
 4 Transfer / 9 Quit), the conveyor poll loop, and the ADS symbol
 layout are unchanged.
 
+## Tier 2 — Per-block storage (FIFO)
+
+Tier 2 extends Tier 1 by tracking each stored block individually
+through a `BatchStock(Stock)` subclass:
+
+- `BatchStock` inherits the EMPTY / LOW / OK state from `Stock` and
+  delegates count updates via `super().add()` / `super().remove()`,
+- an internal slot list `_slots: list[tuple[float, float]]` records
+  the `(dst_x, dst_y)` of every block currently in storage,
+- `BatchStock.add(dst_x, dst_y)` appends a slot then calls
+  `super().add()`,
+- `BatchStock.remove() -> tuple[float, float] | None` pops the
+  oldest slot (FIFO) and calls `super().remove()`, returning the
+  coordinates of the block to dispatch,
+- `BatchStock.show()` calls `super().show()` then prints the slot
+  list with index and coordinates.
+
+The pallet at `(160, 410)` acts as the warehouse gate: it is the
+fixed source for **Add to storage** and the fixed destination for
+**Remove from storage**.
+
+The menu gains two dedicated options (6 items total):
+
+- `4` **Add to storage** — prompts `dst_x` / `dst_y`, validates
+  `is_storage_destination(...)`, then calls
+  `Remote.transfer_item(pallet → dst)` and `bstock.add(dst_x, dst_y)`,
+- `5` **Remove from storage (FIFO)** — pops the oldest slot via
+  `bstock.remove()`, then calls `Remote.transfer_item(slot → pallet)`.
+
 ## ADS Smoke Test
 
 The simulator ADS server binds to `127.0.0.1:48898` by default and exposes these symbols:

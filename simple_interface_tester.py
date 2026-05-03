@@ -116,8 +116,35 @@ class Stock:
 # -----------------------------------------------------------------------------
 
 
+# --- Tier 2 additions: FIFO batch model --------------------------------------
+class BatchStock(Stock):
+    """FIFO batch stock: list of slot coordinates on top of Stock."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._slots: list[tuple[float, float]] = []
+
+    def add(self, dst_x: float, dst_y: float) -> None:
+        self._slots.append((dst_x, dst_y))
+        super().add()
+
+    def remove(self) -> tuple[float, float] | None:
+        if not self._slots:
+            print("Stock: empty, nothing to remove")
+            return None
+        src = self._slots.pop(0)
+        super().remove()
+        return src
+
+    def show(self) -> None:
+        super().show()
+        for i, (x, y) in enumerate(self._slots, 1):
+            print(f"  slot {i}: ({x:.1f}, {y:.1f})")
+# -----------------------------------------------------------------------------
+
+
 def main() -> None:
-    stock = Stock()  # Tier 1: bulk stock model (OOP)
+    stock = BatchStock()  # Tier 2: FIFO batch model (OOP, extends Tier 1 Stock)
     client = ADSClient(local_ams_net_id=LOCAL_NET_ID)
     try:
         client.open(target_ip=PLC_IP, target_ams_net_id=PLC_NET_ID, target_ams_port=PLC_PORT)
@@ -146,7 +173,8 @@ def main() -> None:
             print("1 - Send pallet")
             print("2 - Release pallet from imaging")
             print("3 - Return pallet")
-            print("4 - Transfer item")
+            print("4 - Add to storage  (pallet -> storage slot)")
+            print("5 - Remove from storage  (FIFO -> pallet)")
             print("9 - Quit")
 
             sel = int(input("Select: "))
@@ -159,24 +187,31 @@ def main() -> None:
                 case 3:
                     client.write_symbol(REMOTE_RETURN_PALLET, True)
                 case 4:
-                    src_x = float(input("Source x-coordinate: "))
-                    src_y = float(input("Source y-coordinate: "))
-                    dst_x = float(input("Destination x-coordinate: "))
-                    dst_y = float(input("Destination y-coordinate: "))
-                    client.write_symbol(REMOTE_SRC_X, src_x)
-                    client.write_symbol(REMOTE_SRC_Y, src_y)
+                    # Add: pallet (fixed src) -> storage slot (user-chosen dst).
+                    dst_x = float(input("Storage slot x-coordinate: "))
+                    dst_y = float(input("Storage slot y-coordinate: "))
+                    if not is_storage_destination(dst_x, dst_y):
+                        print("Storage slot out of range, transfer skipped")
+                        continue
+                    client.write_symbol(REMOTE_SRC_X, PALLET_CENTER_X)
+                    client.write_symbol(REMOTE_SRC_Y, PALLET_CENTER_Y)
                     client.write_symbol(REMOTE_DST_X, dst_x)
                     client.write_symbol(REMOTE_DST_Y, dst_y)
                     sleep(0.1)
                     client.write_symbol(REMOTE_TRANSFER_ITEM, True)
-
-                    # Tier 1 auto-track: adjust the stock model by destination.
-                    if is_storage_destination(dst_x, dst_y):
-                        stock.add()
-                    elif is_pallet_destination(dst_x, dst_y):
-                        stock.remove()
-                    else:
-                        print("Auto-track note: destination is not storage or pallet, count unchanged")
+                    stock.add(dst_x, dst_y)
+                case 5:
+                    # Remove (FIFO): oldest storage slot -> pallet (fixed dst).
+                    src = stock.remove()
+                    if src is None:
+                        continue
+                    src_x, src_y = src
+                    client.write_symbol(REMOTE_SRC_X, src_x)
+                    client.write_symbol(REMOTE_SRC_Y, src_y)
+                    client.write_symbol(REMOTE_DST_X, PALLET_CENTER_X)
+                    client.write_symbol(REMOTE_DST_Y, PALLET_CENTER_Y)
+                    sleep(0.1)
+                    client.write_symbol(REMOTE_TRANSFER_ITEM, True)
                 case 9:
                     break
                 case _:
