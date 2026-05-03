@@ -37,6 +37,29 @@ Run both the GUI and ADS server:
 block-storage-sim --mode both
 ```
 
+Run the Tier 1 bulk stock app (CLI):
+
+```powershell
+.\.venv\Scripts\python.exe .\simple_interface_tester.py
+```
+
+Tier 1 adds bulk stock tracking on top of the teacher's reference
+tester (`simple_interface_tester.py`):
+
+- storage/pallet area constants and a low-stock threshold,
+- `is_storage_destination(...)` and `is_pallet_destination(...)` helpers
+  that classify a transfer destination,
+- a `Stock` class encapsulating the bulk count and the
+  EMPTY / LOW / OK state (`Stock.add()`, `Stock.remove()`,
+  `Stock.show()`, `Stock.state`),
+- a stock dashboard line printed before the menu (`stock.show()`),
+- an auto-track block inside transfer case 4 that calls `stock.add()`
+  or `stock.remove()` based on the destination of the transfer.
+
+The original 5-item menu (1 Send pallet / 2 Release / 3 Return /
+4 Transfer / 9 Quit), the conveyor poll loop, and the ADS symbol
+layout are unchanged.
+
 ## ADS Smoke Test
 
 The simulator ADS server binds to `127.0.0.1:48898` by default and exposes these symbols:
