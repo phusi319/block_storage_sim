@@ -24,18 +24,14 @@ PLC_NET_ID = "127.0.0.1.1.1"
 PLC_PORT = 851
 LOCAL_NET_ID = "127.0.0.1.1.2"
 
-# --- Tier 1 additions: bulk stock area constants -----------------------------
-# Storage area: x in [0, 400], y in [0, 300]. Pallet slot center: (160, 410),
-# half-size 60 mm. Values come from src/block_storage_simulator/constants.py.
+# Storage zone bounds + pallet slot center (from src/block_storage_simulator/constants.py).
 STORAGE_MIN_X = 0.0
 STORAGE_MAX_X = 400.0
 STORAGE_MIN_Y = 0.0
 STORAGE_MAX_Y = 300.0
 PALLET_CENTER_X = 160.0
 PALLET_CENTER_Y = 410.0
-PALLET_HALF_SIZE = 60.0
 LOW_STOCK_THRESHOLD = 3
-# -----------------------------------------------------------------------------
 
 CONVEYOR_STATE = ADSSymbol("StatusVars.ConveyorState", INT)
 REMOTE_SEND_PALLET = ADSSymbol("Remote.send_pallet", BOOL)
@@ -46,6 +42,10 @@ REMOTE_SRC_X = ADSSymbol("Remote.src_x", LREAL)
 REMOTE_SRC_Y = ADSSymbol("Remote.src_y", LREAL)
 REMOTE_DST_X = ADSSymbol("Remote.dst_x", LREAL)
 REMOTE_DST_Y = ADSSymbol("Remote.dst_y", LREAL)
+
+
+def is_storage_destination(dst_x: float, dst_y: float) -> bool:
+    return STORAGE_MIN_X <= dst_x <= STORAGE_MAX_X and STORAGE_MIN_Y <= dst_y <= STORAGE_MAX_Y
 
 
 def print_state(state: int) -> None:
@@ -74,18 +74,6 @@ def print_state(state: int) -> None:
             print("Unknown state")
 
 
-# --- Tier 1 additions: bulk stock helpers ------------------------------------
-def is_storage_destination(dst_x: float, dst_y: float) -> bool:
-    return STORAGE_MIN_X <= dst_x <= STORAGE_MAX_X and STORAGE_MIN_Y <= dst_y <= STORAGE_MAX_Y
-
-
-def is_pallet_destination(dst_x: float, dst_y: float) -> bool:
-    return (
-        abs(dst_x - PALLET_CENTER_X) <= PALLET_HALF_SIZE
-        and abs(dst_y - PALLET_CENTER_Y) <= PALLET_HALF_SIZE
-    )
-
-
 class Stock:
     """Bulk stock with EMPTY/LOW/OK state."""
 
@@ -102,49 +90,53 @@ class Stock:
 
     def add(self) -> None:
         self._count += 1
-        print(f"Auto-track: into storage, count -> {self._count}")
+        print(f"Stock: +1, count -> {self._count}")
 
     def remove(self) -> None:
         if self._count > 0:
             self._count -= 1
-            print(f"Auto-track: onto pallet, count -> {self._count}")
+            print(f"Stock: -1, count -> {self._count}")
         else:
-            print("Auto-track warning: pallet destination but count is already 0")
+            print("Stock warning: count is already 0")
 
     def show(self) -> None:
         print(f"[Stock] state={self.state}  count={self._count}  item=Block (bulk)")
 # -----------------------------------------------------------------------------
 
 
-# --- Tier 2 additions: FIFO batch model --------------------------------------
-class BatchStock(Stock):
-    """FIFO batch stock: list of slot coordinates on top of Stock."""
+# --- Tier 3 additions: per-item tracking -------------------------------------
+class ItemStock(Stock):
+    """Stock with a unique id per item; user removes by id."""
 
     def __init__(self) -> None:
         super().__init__()
-        self._slots: list[tuple[float, float]] = []
+        self._items: list[tuple[int, float, float]] = []  # (id, x, y)
+        self._next_id = 1
 
     def add(self, dst_x: float, dst_y: float) -> None:
-        self._slots.append((dst_x, dst_y))
+        self._items.append((self._next_id, dst_x, dst_y))
+        self._next_id += 1
         super().add()
 
-    def remove(self) -> tuple[float, float] | None:
-        if not self._slots:
-            print("Stock: empty, nothing to remove")
-            return None
-        src = self._slots.pop(0)
-        super().remove()
-        return src
+    def remove(self, item_id: int) -> tuple[float, float] | None:
+        for i, (iid, x, y) in enumerate(self._items):
+            if iid == item_id:
+                self._items.pop(i)
+                super().remove()
+                print(f"  shipped item id={item_id}")
+                return (x, y)
+        print(f"Stock: no item with id={item_id}")
+        return None
 
     def show(self) -> None:
-        super().show()
-        for i, (x, y) in enumerate(self._slots, 1):
-            print(f"  slot {i}: ({x:.1f}, {y:.1f})")
+        print(f"[Stock] state={self.state}  count={self._count}  item=Block (per-item)")
+        for item_id, x, y in self._items:
+            print(f"  id={item_id} at ({x:.1f}, {y:.1f})")
 # -----------------------------------------------------------------------------
 
 
 def main() -> None:
-    stock = BatchStock()  # Tier 2: FIFO batch model (OOP, extends Tier 1 Stock)
+    stock = ItemStock()  # Tier 3: per-item tracking (OOP, extends Tier 1 Stock)
     client = ADSClient(local_ams_net_id=LOCAL_NET_ID)
     try:
         client.open(target_ip=PLC_IP, target_ams_net_id=PLC_NET_ID, target_ams_port=PLC_PORT)
@@ -174,7 +166,7 @@ def main() -> None:
             print("2 - Release pallet from imaging")
             print("3 - Return pallet")
             print("4 - Add to storage  (pallet -> storage slot)")
-            print("5 - Remove from storage  (FIFO -> pallet)")
+            print("5 - Remove from storage by id  (item -> pallet)")
             print("9 - Quit")
 
             sel = int(input("Select: "))
@@ -188,10 +180,11 @@ def main() -> None:
                     client.write_symbol(REMOTE_RETURN_PALLET, True)
                 case 4:
                     # Add: pallet (fixed src) -> storage slot (user-chosen dst).
+                    # Client-side zone guard (matches Tier 1 / Tier 2); simulator still validates per spec sec.11.
                     dst_x = float(input("Storage slot x-coordinate: "))
                     dst_y = float(input("Storage slot y-coordinate: "))
                     if not is_storage_destination(dst_x, dst_y):
-                        print("Storage slot out of range, transfer skipped")
+                        print("Destination outside storage zone, skipping.")
                         continue
                     client.write_symbol(REMOTE_SRC_X, PALLET_CENTER_X)
                     client.write_symbol(REMOTE_SRC_Y, PALLET_CENTER_Y)
@@ -201,8 +194,9 @@ def main() -> None:
                     client.write_symbol(REMOTE_TRANSFER_ITEM, True)
                     stock.add(dst_x, dst_y)
                 case 5:
-                    # Remove (FIFO): oldest storage slot -> pallet (fixed dst).
-                    src = stock.remove()
+                    # Remove by id: chosen item -> pallet (fixed dst).
+                    item_id = int(input("Item id to ship: "))
+                    src = stock.remove(item_id)
                     if src is None:
                         continue
                     src_x, src_y = src

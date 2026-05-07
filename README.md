@@ -89,6 +89,47 @@ The menu gains two dedicated options (6 items total):
 - `5` **Remove from storage (FIFO)** — pops the oldest slot via
   `bstock.remove()`, then calls `Remote.transfer_item(slot → pallet)`.
 
+## Tier 3 — Per-item storage (by ID)
+
+Tier 3 is a sibling of Tier 2: both extend the Tier 1 `Stock` class
+to track each stored block individually, but Tier 3 indexes blocks
+by a unique **id** instead of insertion order. The user picks
+exactly which block to ship, like a real WMS.
+
+Tier 3 introduces an `ItemStock(Stock)` subclass:
+
+- `ItemStock` inherits the EMPTY / LOW / OK state from `Stock` and
+  delegates count updates via `super().add()` / `super().remove()`,
+- an internal item list `_items: list[tuple[int, float, float]]`
+  records `(id, dst_x, dst_y)` for every block currently in storage,
+- a counter `_next_id` issues a fresh integer id on every `add`,
+- `ItemStock.add(dst_x, dst_y)` appends `(id, x, y)`, increments
+  `_next_id`, then calls `super().add()`,
+- `ItemStock.remove(item_id) -> tuple[float, float] | None` looks up
+  the item by id, pops it, calls `super().remove()`, and returns
+  the stored coordinates (or `None` if the id is unknown),
+- `ItemStock.show()` calls `super().show()` then prints every item
+  as `id=<n> at (x, y)`.
+
+Note: `ItemStock` extends `Stock` directly, **not** `BatchStock` —
+the FIFO list of Tier 2 is not reused.
+
+The menu keeps the 6-item shape of Tier 2; only option 5 changes:
+
+- `4` **Add to storage** — prompts `dst_x` / `dst_y`, validates
+  `is_storage_destination(...)`, then calls
+  `Remote.transfer_item(pallet → dst)` and `istock.add(dst_x, dst_y)`,
+- `5` **Remove from storage by id** — prompts `item_id`, looks up
+  the coordinate via `istock.remove(item_id)`, then calls
+  `Remote.transfer_item(slot → pallet)`. Range/occupancy/stack
+  validation stays in the simulator (spec §11), the client only
+  gathers and forwards the request.
+
+The bulk count `_count` is **optimistic**: it is incremented on
+command send, not on simulator acknowledge. If the simulator
+rejects a transfer (e.g. the destination overlaps another stack),
+restart the tester to resync.
+
 ## ADS Smoke Test
 
 The simulator ADS server binds to `127.0.0.1:48898` by default and exposes these symbols:
