@@ -128,6 +128,16 @@ class ItemStock(Stock):
         print(f"Stock: no item with id={item_id}")
         return None
 
+    def remove_oldest(self) -> tuple[float, float] | None:
+        """FIFO ship (like Tier 2 BatchStock): pop the earliest-added item."""
+        if not self._items:
+            print("Stock: empty, nothing to ship")
+            return None
+        item_id, x, y = self._items.pop(0)
+        super().remove()
+        print(f"  shipped oldest item id={item_id}")
+        return (x, y)
+
     def show(self) -> None:
         print(f"[Stock] state={self.state}  count={self._count}  item=Block (per-item)")
         for item_id, x, y in self._items:
@@ -167,6 +177,7 @@ def main() -> None:
             print("3 - Return pallet")
             print("4 - Add to storage  (pallet -> storage slot)")
             print("5 - Remove from storage by id  (item -> pallet)")
+            print("6 - Remove oldest from storage  (FIFO, like Tier 2)")
             print("9 - Quit")
 
             sel = int(input("Select: "))
@@ -197,6 +208,18 @@ def main() -> None:
                     # Remove by id: chosen item -> pallet (fixed dst).
                     item_id = int(input("Item id to ship: "))
                     src = stock.remove(item_id)
+                    if src is None:
+                        continue
+                    src_x, src_y = src
+                    client.write_symbol(REMOTE_SRC_X, src_x)
+                    client.write_symbol(REMOTE_SRC_Y, src_y)
+                    client.write_symbol(REMOTE_DST_X, PALLET_CENTER_X)
+                    client.write_symbol(REMOTE_DST_Y, PALLET_CENTER_Y)
+                    sleep(0.1)
+                    client.write_symbol(REMOTE_TRANSFER_ITEM, True)
+                case 6:
+                    # Remove FIFO: oldest item -> pallet (fixed dst).
+                    src = stock.remove_oldest()
                     if src is None:
                         continue
                     src_x, src_y = src
